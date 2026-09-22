@@ -1,0 +1,61 @@
+Tests/test_suite.sh
+  s_6f10d12e5c684d::t_f9825ea051de05 8-14,63,372-373,510
+  s_6f10d12e5c684d::t_5f97855225c2ff 409-434,605
+  s_6f10d12e5c684d::t_3cc79201779587 527-532
+  s_6f10d12e5c684d::t_e8110d933ad387 242-269,600
+Scripts/setup-swift-tools.sh
+  s_6f10d12e5c684d::t_5902e431c95928 428-432,436-444,446-454
+  s_6f10d12e5c684d::t_3a0ac693d18a4e 349,366,370,525
+  s_6f10d12e5c684d::t_a2e642af4adf11 19-23
+  s_6f10d12e5c684d::t_e22c400daaecc4 32,257-262,267-271
+  s_6f10d12e5c684d::t_bb4dddab1ece90 144-146,160,182-186
+  s_6f10d12e5c684d::t_e126847a00fc6b 143,147-159,177-178,180-181,187-188,191
+  s_6f10d12e5c684d::t_17eb1e4afe3288 202-204
+  s_6f10d12e5c684d::t_c1ea351fe3e4e2 434,455,461,466,475,480,488,493,501,506,515,520
+  s_6f10d12e5c684d::t_e5167be1ad5049 18,189-190,192-193
+  s_6f10d12e5c684d::t_120722c19227a8 435,445,459,473,486,499,513,526
+  s_6f10d12e5c684d::t_d1e76e695489e9 179
+  s_6f10d12e5c684d::t_b4807e074ae3e0 161-176,195
+  s_6f10d12e5c684d::t_e51738850fe199 433
+Scripts/build-release.sh
+  s_6f10d12e5c684d::t_cdd39e8bc7eb09 30,33-35
+Scripts/swift-tools.sh
+  s_6f10d12e5c684d::t_108b7fa8af3701 22-23
+  s_6f10d12e5c684d::t_4ab8abcf559210 8,15-21,174,201,215,239
+.github/workflows/ci.yml
+  s_6f10d12e5c684d::t_cdd39e8bc7eb09 15,24-26
+Scripts/generate-mintfile.sh
+  s_6f10d12e5c684d::t_ddf73bc34adbc8 1-42
+.github/workflows/release.yml
+  s_6f10d12e5c684d::t_cdd39e8bc7eb09 20-25
+Scripts/validate-config.sh
+  s_6f10d12e5c684d::t_c4cbc19838a837 1-14,18-24
+  s_6f10d12e5c684d::t_9b1d17a4a1f830 15-17
+bin/swift-tooling
+  s_6f10d12e5c684d::t_9a2649179f78b3 156
+README.md
+  s_6f10d12e5c684d::t_63e7d16d5128d1 13
+  s_6f10d12e5c684d::t_ade10cf28242bc 58-60
+  s_6f10d12e5c684d::t_3a0ac693d18a4e 67
+  s_6f10d12e5c684d::t_e22c400daaecc4 18,20-22,25-26
+  s_6f10d12e5c684d::t_4e8a8d903327c8 27
+Makefile
+  s_6f10d12e5c684d::t_cdd39e8bc7eb09 3,11-12
+  s_6f10d12e5c684d::t_a72eb60b1468cf 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dba125e753d0c290b7c86d003b86a6d82a951e46",
+  "prompts": {},
+  "sessions": {
+    "s_6f10d12e5c684d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c5cc-984b-7b42-b39d-a78a91277495",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
