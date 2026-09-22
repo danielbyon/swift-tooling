@@ -27,9 +27,12 @@ trap 'rm -rf "$staging_root"' EXIT
 
 release_root="$staging_root/swift-tooling"
 mkdir -p "$release_root"
-for release_path in bin Scripts config Mintfile toolchain.lock; do
+for release_path in bin Scripts config toolchain.lock; do
     cp -R "$repository_root/$release_path" "$release_root/$release_path"
 done
+bash "$script_directory/generate-mintfile.sh" \
+    "$repository_root/toolchain.lock" \
+    "$release_root/Mintfile"
 
 chmod 0755 "$release_root/bin/swift-tooling" \
     "$release_root/Scripts/setup-swift-tools.sh" \

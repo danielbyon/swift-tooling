@@ -78,12 +78,6 @@ only_rules:
   - unused_setter_value
   - variable_shadowing
 
-analyzer_rules:
-  - capture_variable
-  - typesafe_array_init
-  - unused_declaration
-  - unused_import
-
 blanket_disable_command:
   allowed_rules: []
   always_blanket_disable: []
@@ -208,15 +202,6 @@ unneeded_override:
 
 unowned_variable_capture:
   allow_explicit_unsafe_unowned: false
-
-unused_declaration:
-  include_public_and_open: false
-  related_usrs_to_skip: []
-
-unused_import:
-  require_explicit_imports: true
-  allowed_transitive_imports: []
-  always_keep_imports: []
 
 variable_shadowing:
   ignore_parameters: true

@@ -10,15 +10,20 @@ the runner.
 
 ## Install in a repository
 
-Run this from the target repository. It resolves the latest release once,
+Run this from the target repository. It resolves the selected release once,
 verifies the archive, installs it under `.tools/`, adds `.tools/` to
 `.gitignore`, and creates the adapter and local configuration template:
 
 ```bash
+tooling_version=v0.1.1
 setup_script=$(mktemp) && curl --fail --location --silent --show-error \
-  https://github.com/danielbyon/swift-tooling/releases/latest/download/setup-swift-tools.sh \
-  --output "$setup_script" && bash "$setup_script" --repository-root "$PWD"; status=$?; rm -f "$setup_script"; exit "$status"
+  "https://github.com/danielbyon/swift-tooling/releases/download/$tooling_version/setup-swift-tools.sh" \
+  --output "$setup_script" && bash "$setup_script" \
+  --repository-root "$PWD" --release-version "$tooling_version"; status=$?; rm -f "$setup_script"; exit "$status"
 ```
+
+The versioned URL and release pin make the bootstrap reproducible. Update
+`tooling_version` deliberately when adopting a newer shared release.
 
 Complete `Scripts/swift-tools-local.sh` before running the adapter. The file
 declares the Swift source roots, local `.swiftformat` and `.swiftlint.yml`
@@ -50,11 +55,15 @@ SWIFT_TOOLS_COMMAND_PREFIX=()
 Apps can set `SWIFT_TOOLS_COMMAND_PREFIX` to a repository-owned Xcode selector.
 Compiler-backed SwiftLint analysis remains a consumer-owned adapter because
 Xcode workspace/scheme topology is not shared by SwiftPM libraries and apps.
+The shared baseline intentionally contains only rules enforced by `swiftlint
+lint`; consumers that have a compiler log can add analyzer rules to their local
+overlay and run `swiftlint analyze` in their own adapter.
 
 ## Development
 
 ```bash
 make test
 make lint
+make validate-config
 make release VERSION=v0.1.0
 ```

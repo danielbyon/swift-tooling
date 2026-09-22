@@ -5,6 +5,13 @@ readonly test_root=$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 readonly setup_script="$test_root/Scripts/setup-swift-tools.sh"
 readonly runner="$test_root/bin/swift-tooling"
 readonly release_builder="$test_root/Scripts/build-release.sh"
+readonly test_temp_root=$(mktemp -d "${TMPDIR:-/tmp}/swift-tooling-tests.XXXXXX")
+
+cleanup() {
+    rm -rf "$test_temp_root"
+}
+
+trap cleanup EXIT
 
 failures=0
 
@@ -53,7 +60,7 @@ assert_equal() {
 
 new_fixture() {
     local fixture
-    fixture=$(mktemp -d)
+    fixture=$(mktemp -d "$test_temp_root/fixture.XXXXXX")
     mkdir -p "$fixture/consumer/Scripts" "$fixture/consumer/Sources" "$fixture/consumer/Tests"
     printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$fixture/consumer/Scripts/with-xcode.sh"
     printf '%s\n' 'source-root' > "$fixture/consumer/Sources/Example.swift"
@@ -232,6 +239,34 @@ FAKE_MINT
     assert_contains "$log" 'bootstrap --mintfile'
 }
 
+test_runner_accepts_valid_mint_archive() {
+    local fixture consumer mint_source mint_archive mint_sha
+    fixture=$(new_fixture)
+    consumer="$fixture/consumer"
+    mint_source="$fixture/mint-source"
+    mint_archive="$fixture/mint.zip"
+    mkdir -p "$fixture/release" "$mint_source"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$mint_source/mint"
+    (cd "$mint_source" && zip -q "$mint_archive" mint)
+    mint_sha=$(shasum -a 256 "$mint_archive" | awk '{print $1}')
+    printf '%s\n' \
+        'MINT_VERSION=0.18.0' \
+        "MINT_ARCHIVE_URL=file://$mint_archive" \
+        "MINT_ARCHIVE_SHA256=$mint_sha" \
+        'SWIFTFORMAT_PACKAGE=nicklockwood/SwiftFormat' \
+        'SWIFTFORMAT_VERSION=0.63.0' \
+        'SWIFTLINT_PACKAGE=realm/SwiftLint' \
+        'SWIFTLINT_VERSION=0.65.1' > "$fixture/release/toolchain.lock"
+    printf '%s\n' 'nicklockwood/SwiftFormat@0.63.0' 'realm/SwiftLint@0.65.1' > "$fixture/release/Mintfile"
+
+    if ! bash "$runner" --root "$consumer" --release-root "$fixture/release" bootstrap; then
+        fail 'valid Mint archives should pass bootstrap validation'
+        return
+    fi
+
+    assert_file_exists "$consumer/.tools/mint/0.18.0/mint"
+}
+
 test_runner_rejects_unsafe_mint_archive() {
     local fixture consumer mint_source mint_archive mint_sha
     fixture=$(new_fixture)
@@ -334,6 +369,8 @@ test_runner_requires_local_configuration() {
     local fixture consumer
     fixture=$(new_fixture)
     consumer="$fixture/consumer"
+    mkdir -p "$fixture/release"
+    printf '%s\n' 'MINT_VERSION=0.18.0' > "$fixture/release/toolchain.lock"
     printf '%s\n' 'SWIFT_TOOLS_SOURCE_PATHS=(Sources)' > "$consumer/Scripts/swift-tools-local.sh"
     rm "$consumer/Scripts/swift-tools-local.sh"
 
@@ -367,6 +404,32 @@ test_setup_updates_pin_without_overwriting_local_configuration() {
     assert_contains "$consumer/Scripts/swift-tools.lock" 'SWIFT_TOOLING_RELEASE_VERSION=v1.1.0'
     assert_contains "$consumer/Scripts/swift-tools-local.sh" '# preserve this file'
     assert_file_exists "$consumer/.tools/swift-tooling/v1.1.0/bin/swift-tooling"
+}
+
+test_setup_refreshes_adapter_when_release_checksum_changes() {
+    local fixture consumer archive archive_sha
+    fixture=$(new_fixture)
+    consumer="$fixture/consumer"
+    archive_sha=$(new_release_archive "$fixture" v1.0.0)
+    archive="$fixture/swift-tooling-v1.0.0.tar.gz"
+
+    bash "$setup_script" \
+        --repository-root "$consumer" \
+        --release-archive "$archive" \
+        --release-version v1.0.0 \
+        --release-sha256 "$archive_sha" >/dev/null
+
+    printf '%s\n' '# refreshed adapter' >> "$fixture/release/Scripts/swift-tools.sh"
+    tar -czf "$archive" -C "$fixture/release" .
+    archive_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
+
+    bash "$setup_script" \
+        --repository-root "$consumer" \
+        --release-archive "$archive" \
+        --release-version v1.0.0 \
+        --release-sha256 "$archive_sha" >/dev/null
+
+    assert_contains "$consumer/Scripts/swift-tools.sh" '# refreshed adapter'
 }
 
 test_consumer_adapter_delegates_to_pinned_release() {
@@ -444,7 +507,7 @@ LOCK
 
 test_release_builder_creates_verified_release_assets() {
     local fixture output archive archive_sha
-    fixture=$(mktemp -d)
+    fixture=$(mktemp -d "$test_temp_root/fixture.XXXXXX")
     output="$fixture/dist"
 
     if ! bash "$release_builder" v1.0.0 "$output"; then
@@ -461,6 +524,12 @@ test_release_builder_creates_verified_release_assets() {
     assert_contains "$output/release-manifest.env" 'RELEASE_VERSION=v1.0.0'
     assert_contains "$output/release-manifest.env" "RELEASE_SHA256=$archive_sha"
     assert_contains "$output/release-manifest.env" 'RELEASE_ASSET=swift-tooling-v1.0.0.tar.gz'
+    if ! tar -xOf "$archive" ./Mintfile | grep -Fq 'nicklockwood/SwiftFormat@0.63.0'; then
+        fail 'release Mintfile should be generated from toolchain.lock'
+    fi
+    if ! tar -xOf "$archive" ./Mintfile | grep -Fq 'realm/SwiftLint@0.65.1'; then
+        fail 'release Mintfile should include the pinned SwiftLint package'
+    fi
 }
 
 test_built_release_installs_and_runs_through_consumer_adapter() {
@@ -528,10 +597,12 @@ test_setup_rejects_checksum_mismatch_without_partial_install
 test_setup_rejects_unsafe_release_version
 test_setup_rejects_unsafe_archive_entries
 test_runner_bootstrap_does_not_require_consumer_paths_or_configs
+test_runner_accepts_valid_mint_archive
 test_runner_rejects_unsafe_mint_archive
 test_runner_forwards_config_and_paths_and_cleans_effective_format_config
 test_runner_requires_local_configuration
 test_setup_updates_pin_without_overwriting_local_configuration
+test_setup_refreshes_adapter_when_release_checksum_changes
 test_consumer_adapter_delegates_to_pinned_release
 test_consumer_adapter_rejects_unsafe_archive_entries
 test_release_builder_creates_verified_release_assets

@@ -5,11 +5,21 @@ readonly script_directory=$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 readonly repository_root=$(cd -- "$script_directory/.." && pwd -P)
 readonly lock_file="$script_directory/swift-tools.lock"
 readonly default_repository_url="https://github.com/danielbyon/swift-tooling"
+cleanup_root=''
 
 die() {
     printf 'swift-tools: %s\n' "$1" >&2
     exit 1
 }
+
+cleanup_exit() {
+    if [[ -n "$cleanup_root" ]]; then
+        rm -rf "$cleanup_root"
+        cleanup_root=''
+    fi
+}
+
+trap cleanup_exit EXIT
 
 # Keep this validator aligned with the standalone setup asset before extraction.
 validate_release_archive() {
@@ -161,7 +171,7 @@ ensure_release() {
 
     temporary_root=$(mktemp -d "${TMPDIR:-/tmp}/swift-tooling-consumer.XXXXXX")
     temporary_archive="$temporary_root/release.tar.gz"
-    trap 'rm -rf "$temporary_root"' RETURN
+    cleanup_root="$temporary_root"
 
     if [[ -n "$archive" ]]; then
         cp "$archive" "$temporary_archive"
@@ -188,8 +198,7 @@ ensure_release() {
     fi
     mv "$extracted_root" "$release_root"
     cp "$temporary_archive" "$release_root/.swift-tooling-release.tar.gz"
-    rm -rf "$temporary_root"
-    trap - RETURN
+    cleanup_exit
 }
 
 update_release() {
@@ -203,7 +212,7 @@ update_release() {
     temporary_root=$(mktemp -d "${TMPDIR:-/tmp}/swift-tooling-update.XXXXXX")
     manifest_file="$temporary_root/release-manifest.env"
     archive_file="$temporary_root/release.tar.gz"
-    trap 'rm -rf "$temporary_root"' RETURN
+    cleanup_root="$temporary_root"
 
     curl --fail --location --silent --show-error \
         "$release_repository_url/releases/latest/download/release-manifest.env" \
@@ -227,8 +236,7 @@ update_release() {
         --release-version "$latest_version" \
         --release-sha256 "$latest_sha256" \
         --release-asset "$latest_asset"
-    rm -rf "$temporary_root"
-    trap - RETURN
+    cleanup_exit
 }
 
 case "${1:-}" in
