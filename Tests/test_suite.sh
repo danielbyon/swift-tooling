@@ -370,6 +370,130 @@ LOCAL_CONFIG
     assert_contains "$log" 'Tests'
 }
 
+test_runner_configured_exec_composes_shared_and_local_configs() {
+    local fixture consumer fake_mint log config_log
+    fixture=$(new_fixture)
+    consumer="$fixture/consumer"
+    mkdir -p "$consumer/.tools/mint/bin" "$fixture/release/bin" "$fixture/release/config" \
+        "$fixture/release/Scripts"
+    cp "$test_root/Scripts/toolchain-lock.sh" "$fixture/release/Scripts/toolchain-lock.sh"
+    printf '%s\n' 'mint base' > "$fixture/release/Mintfile"
+    printf '%s\n' 'swiftformat base' > "$fixture/release/config/swiftformat.base"
+    printf '%s\n' 'swiftlint base' > "$fixture/release/config/swiftlint.base.yml"
+    printf '%s\n' 'MINT_VERSION=0.18.0' 'SWIFTFORMAT_PACKAGE=nicklockwood/SwiftFormat' \
+        'SWIFTFORMAT_VERSION=0.63.0' 'SWIFTLINT_PACKAGE=realm/SwiftLint' \
+        'SWIFTLINT_VERSION=0.65.1' > "$fixture/release/toolchain.lock"
+    fake_mint="$fixture/fake-mint"
+    log="$fixture/mint.log"
+    config_log="$fixture/config.log"
+    cat > "$fake_mint" <<'FAKE_MINT'
+#!/usr/bin/env bash
+set -euo pipefail
+args=("$@")
+printf '%s\n' "$*" >> "${FAKE_MINT_LOG:?}"
+for ((index = 0; index < ${#args[@]}; index += 1)); do
+    if [[ "${args[index]}" = --config ]]; then
+        printf '%s\n' '--- CONFIG ---' >> "${FAKE_MINT_CONFIG_LOG:?}"
+        cat "${args[index + 1]}" >> "${FAKE_MINT_CONFIG_LOG:?}"
+    fi
+done
+FAKE_MINT
+    chmod +x "$fake_mint"
+    cat > "$consumer/Scripts/swift-tools-local.sh" <<'LOCAL_CONFIG'
+SWIFT_TOOLS_SOURCE_PATHS=(Sources Tests)
+SWIFT_TOOLS_SWIFTFORMAT_CONFIG=.swiftformat
+SWIFT_TOOLS_SWIFTLINT_CONFIG=.swiftlint.yml
+SWIFT_TOOLS_COMMAND_PREFIX=()
+LOCAL_CONFIG
+
+    if ! FAKE_MINT_LOG="$log" FAKE_MINT_CONFIG_LOG="$config_log" \
+        SWIFT_TOOLING_MINT_BINARY="$fake_mint" \
+        bash "$runner" --root "$consumer" --release-root "$fixture/release" \
+        configured swiftlint analyze --compiler-log-path "$fixture/compiler.log" \
+        "$consumer/Sources/Example.swift"; then
+        fail 'configured SwiftLint execution should succeed with the fake Mint executable'
+        return
+    fi
+
+    assert_contains "$config_log" 'swiftlint base'
+    assert_contains "$config_log" '# local swiftlint options'
+    assert_order "$config_log" 'swiftlint base' '# local swiftlint options'
+
+    : > "$log"
+    : > "$config_log"
+    if ! FAKE_MINT_LOG="$log" FAKE_MINT_CONFIG_LOG="$config_log" \
+        SWIFT_TOOLING_MINT_BINARY="$fake_mint" \
+        bash "$runner" --root "$consumer" --release-root "$fixture/release" \
+        configured swiftformat --lint "$consumer/Sources/Example.swift"; then
+        fail 'configured SwiftFormat execution should succeed with the fake Mint executable'
+        return
+    fi
+
+    assert_contains "$config_log" 'swiftformat base'
+    assert_contains "$config_log" '# local swiftformat options'
+    assert_order "$config_log" 'swiftformat base' '# local swiftformat options'
+}
+
+test_runner_allows_baseline_without_local_overlays() {
+    local fixture consumer fake_mint log config_log
+    fixture=$(new_fixture)
+    consumer="$fixture/consumer"
+    rm "$consumer/.swiftformat" "$consumer/.swiftlint.yml"
+    mkdir -p "$consumer/.tools/mint/bin" "$fixture/release/bin" "$fixture/release/config" \
+        "$fixture/release/Scripts"
+    cp "$test_root/Scripts/toolchain-lock.sh" "$fixture/release/Scripts/toolchain-lock.sh"
+    printf '%s\n' 'mint base' > "$fixture/release/Mintfile"
+    printf '%s\n' 'swiftformat base' > "$fixture/release/config/swiftformat.base"
+    printf '%s\n' 'swiftlint base' > "$fixture/release/config/swiftlint.base.yml"
+    printf '%s\n' 'MINT_VERSION=0.18.0' 'SWIFTFORMAT_PACKAGE=nicklockwood/SwiftFormat' \
+        'SWIFTFORMAT_VERSION=0.63.0' 'SWIFTLINT_PACKAGE=realm/SwiftLint' \
+        'SWIFTLINT_VERSION=0.65.1' > "$fixture/release/toolchain.lock"
+    fake_mint="$fixture/fake-mint"
+    log="$fixture/mint.log"
+    config_log="$fixture/config.log"
+    cat > "$fake_mint" <<'FAKE_MINT'
+#!/usr/bin/env bash
+set -euo pipefail
+args=("$@")
+printf '%s\n' "$*" >> "${FAKE_MINT_LOG:?}"
+for ((index = 0; index < ${#args[@]}; index += 1)); do
+    if [[ "${args[index]}" = --config ]]; then
+        printf '%s\n' '--- CONFIG ---' >> "${FAKE_MINT_CONFIG_LOG:?}"
+        cat "${args[index + 1]}" >> "${FAKE_MINT_CONFIG_LOG:?}"
+    fi
+done
+FAKE_MINT
+    chmod +x "$fake_mint"
+    cat > "$consumer/Scripts/swift-tools-local.sh" <<'LOCAL_CONFIG'
+SWIFT_TOOLS_SOURCE_PATHS=(Sources Tests)
+SWIFT_TOOLS_COMMAND_PREFIX=()
+LOCAL_CONFIG
+
+    if ! FAKE_MINT_LOG="$log" FAKE_MINT_CONFIG_LOG="$config_log" \
+        SWIFT_TOOLING_MINT_BINARY="$fake_mint" \
+        bash "$runner" --root "$consumer" --release-root "$fixture/release" format; then
+        fail 'format should run with only the shared baseline'
+        return
+    fi
+    assert_contains "$config_log" 'swiftformat base'
+    if grep -Fq -- '# local swiftformat options' "$config_log"; then
+        fail 'format should not require a local SwiftFormat overlay'
+    fi
+
+    : > "$log"
+    : > "$config_log"
+    if ! FAKE_MINT_LOG="$log" FAKE_MINT_CONFIG_LOG="$config_log" \
+        SWIFT_TOOLING_MINT_BINARY="$fake_mint" \
+        bash "$runner" --root "$consumer" --release-root "$fixture/release" lint; then
+        fail 'lint should run with only the shared baseline'
+        return
+    fi
+    assert_contains "$config_log" 'swiftlint base'
+    if grep -Fq -- '# local swiftlint options' "$config_log"; then
+        fail 'lint should not require a local SwiftLint overlay'
+    fi
+}
+
 test_runner_requires_local_configuration() {
     local fixture consumer
     fixture=$(new_fixture)
@@ -493,6 +617,52 @@ FAKE_MINT
     fi
 
     assert_contains "$log" 'realm/SwiftLint@0.65.1'
+}
+
+test_consumer_adapter_layers_configs_for_legacy_release() {
+    local fixture consumer archive archive_sha release_log
+    fixture=$(new_fixture)
+    consumer="$fixture/consumer"
+    mv "$consumer/.swiftlint.yml" "$consumer/swiftlint.overlay.yml"
+    archive_sha=$(new_release_archive "$fixture" v1.0.0)
+    archive="$fixture/swift-tooling-v1.0.0.tar.gz"
+    release_log="$fixture/release.log"
+    cat > "$fixture/release/bin/swift-tooling" <<'FAKE_RELEASE'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${FAKE_RELEASE_LOG:?}"
+FAKE_RELEASE
+    chmod 0755 "$fixture/release/bin/swift-tooling"
+    tar -czf "$archive" -C "$fixture/release" .
+    archive_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
+
+    cp "$test_root/Scripts/swift-tools.sh" "$consumer/Scripts/swift-tools.sh"
+    chmod 0755 "$consumer/Scripts/swift-tools.sh"
+    cat > "$consumer/Scripts/swift-tools.lock" <<LOCK
+SWIFT_TOOLING_REPOSITORY_URL=https://example.invalid/swift-tooling
+SWIFT_TOOLING_RELEASE_VERSION=v1.0.0
+SWIFT_TOOLING_RELEASE_SHA256=$archive_sha
+SWIFT_TOOLING_RELEASE_ASSET=swift-tooling-v1.0.0.tar.gz
+LOCK
+    cat > "$consumer/Scripts/swift-tools-local.sh" <<'LOCAL_CONFIG'
+SWIFT_TOOLS_SOURCE_PATHS=(Sources Tests)
+SWIFT_TOOLS_SWIFTFORMAT_CONFIG=.swiftformat
+SWIFT_TOOLS_SWIFTLINT_CONFIG=swiftlint.overlay.yml
+SWIFT_TOOLS_COMMAND_PREFIX=()
+LOCAL_CONFIG
+
+    if ! FAKE_RELEASE_LOG="$release_log" \
+        SWIFT_TOOLING_RELEASE_ROOT="$fixture/installed" \
+        SWIFT_TOOLING_RELEASE_ARCHIVE="$archive" \
+        bash "$consumer/Scripts/swift-tools.sh" configured swiftlint analyze \
+        --compiler-log-path "$fixture/compiler.log" "$consumer/Sources/Example.swift"; then
+        fail 'legacy release should support configured SwiftLint execution through the adapter'
+        return
+    fi
+
+    assert_contains "$release_log" 'exec swiftlint'
+    assert_contains "$release_log" "$fixture/installed/config/swiftlint.base.yml"
+    assert_contains "$release_log" 'swiftlint.overlay.yml'
 }
 
 test_consumer_adapter_rejects_unsafe_archive_entries() {
@@ -657,10 +827,13 @@ test_runner_bootstrap_does_not_require_consumer_paths_or_configs
 test_runner_accepts_valid_mint_archive
 test_runner_rejects_unsafe_mint_archive
 test_runner_forwards_config_and_paths_and_cleans_effective_format_config
+test_runner_configured_exec_composes_shared_and_local_configs
+test_runner_allows_baseline_without_local_overlays
 test_runner_requires_local_configuration
 test_setup_updates_pin_without_overwriting_local_configuration
 test_setup_refreshes_adapter_when_release_checksum_changes
 test_consumer_adapter_delegates_to_pinned_release
+test_consumer_adapter_layers_configs_for_legacy_release
 test_consumer_adapter_rejects_unsafe_archive_entries
 test_release_builder_creates_verified_release_assets
 test_mintfile_generator_follows_lock_shell_semantics

@@ -26,8 +26,10 @@ The versioned URL and release pin make the bootstrap reproducible. Update
 `tooling_version` deliberately when adopting a newer shared release.
 
 Complete `Scripts/swift-tools-local.sh` before running the adapter. The file
-declares the Swift source roots, local `.swiftformat` and `.swiftlint.yml`
-overlays, and any repository-owned Xcode command prefix.
+declares the Swift source roots and any repository-owned Xcode command prefix.
+Set the optional `.swiftformat` and `.swiftlint.yml` overlay paths only when
+the repository needs customizations; repositories that accept the shared
+baseline do not need either overlay file.
 
 ```bash
 Scripts/swift-tools.sh bootstrap
@@ -47,17 +49,24 @@ spaces:
 
 ```bash
 SWIFT_TOOLS_SOURCE_PATHS=(Sources Tests)
+# Optional; omit either path when the shared baseline is sufficient.
 SWIFT_TOOLS_SWIFTFORMAT_CONFIG=.swiftformat
 SWIFT_TOOLS_SWIFTLINT_CONFIG=.swiftlint.yml
 SWIFT_TOOLS_COMMAND_PREFIX=()
 ```
+
+The shared runner layers the release baseline before each configured overlay.
+The overlay files should contain only repository-specific options. SwiftFormat
+uses a generated effective config, while SwiftLint receives the baseline and
+overlay as a parent-child config pair.
 
 Apps can set `SWIFT_TOOLS_COMMAND_PREFIX` to a repository-owned Xcode selector.
 Compiler-backed SwiftLint analysis remains a consumer-owned adapter because
 Xcode workspace/scheme topology is not shared by SwiftPM libraries and apps.
 The shared baseline intentionally contains only rules enforced by `swiftlint
 lint`; consumers that have a compiler log can add analyzer rules to their local
-overlay and run `swiftlint analyze` in their own adapter.
+overlay and invoke `Scripts/swift-tools.sh configured swiftlint analyze ...` in
+their own adapter.
 
 ## Development
 

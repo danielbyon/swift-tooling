@@ -21,11 +21,13 @@ Options:
   --root PATH             Consumer repository root (default: current directory)
   --release-root PATH     Extracted swift-tooling release root
   --local-config PATH     Consumer-local configuration file
+  --capabilities          Print machine-readable release capabilities
 
 Commands:
   bootstrap               Install Mint and the pinned Swift tools
   format                  Format configured Swift source paths
   lint                    Run SwiftFormat and SwiftLint checks
+  configured TOOL [ARGS]  Run a pinned tool command with shared config layered in
   exec TOOL [ARGS...]     Run a pinned SwiftFormat or SwiftLint command
 USAGE
 }
@@ -46,6 +48,10 @@ while [[ "$#" -gt 0 ]]; do
             [[ "$#" -ge 2 ]] || die '--local-config requires a path'
             local_config=$2
             shift 2
+            ;;
+        --capabilities)
+            printf '%s\n' 'configured-exec=1'
+            exit 0
             ;;
         --help|-h)
             usage
@@ -80,8 +86,8 @@ elif [[ "$local_config" != /* ]]; then
 fi
 
 SWIFT_TOOLS_SOURCE_PATHS=()
-SWIFT_TOOLS_SWIFTFORMAT_CONFIG='.swiftformat'
-SWIFT_TOOLS_SWIFTLINT_CONFIG='.swiftlint.yml'
+SWIFT_TOOLS_SWIFTFORMAT_CONFIG=''
+SWIFT_TOOLS_SWIFTLINT_CONFIG=''
 SWIFT_TOOLS_COMMAND_PREFIX=()
 SWIFT_TOOLS_ROOT="$repository_root"
 if [[ -f "$local_config" ]]; then
@@ -97,16 +103,26 @@ if [[ "$command" = format || "$command" = lint ]]; then
     for source_path in "${SWIFT_TOOLS_SOURCE_PATHS[@]}"; do
         [[ -e "$repository_root/$source_path" || "$source_path" = /* ]] || die "source path does not exist: $source_path"
     done
+fi
 
+if [[ "$command" = format || "$command" = lint || "$command" = configured ]]; then
     if [[ "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" != /* ]]; then
-        SWIFT_TOOLS_SWIFTFORMAT_CONFIG="$repository_root/$SWIFT_TOOLS_SWIFTFORMAT_CONFIG"
+        if [[ -n "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" ]]; then
+            SWIFT_TOOLS_SWIFTFORMAT_CONFIG="$repository_root/$SWIFT_TOOLS_SWIFTFORMAT_CONFIG"
+        fi
     fi
     if [[ "$SWIFT_TOOLS_SWIFTLINT_CONFIG" != /* ]]; then
-        SWIFT_TOOLS_SWIFTLINT_CONFIG="$repository_root/$SWIFT_TOOLS_SWIFTLINT_CONFIG"
+        if [[ -n "$SWIFT_TOOLS_SWIFTLINT_CONFIG" ]]; then
+            SWIFT_TOOLS_SWIFTLINT_CONFIG="$repository_root/$SWIFT_TOOLS_SWIFTLINT_CONFIG"
+        fi
     fi
 
-    [[ -f "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" ]] || die "SwiftFormat config is missing: $SWIFT_TOOLS_SWIFTFORMAT_CONFIG"
-    [[ -f "$SWIFT_TOOLS_SWIFTLINT_CONFIG" ]] || die "SwiftLint config is missing: $SWIFT_TOOLS_SWIFTLINT_CONFIG"
+    if [[ -n "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" ]]; then
+        [[ -f "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" ]] || die "SwiftFormat config is missing: $SWIFT_TOOLS_SWIFTFORMAT_CONFIG"
+    fi
+    if [[ -n "$SWIFT_TOOLS_SWIFTLINT_CONFIG" ]]; then
+        [[ -f "$SWIFT_TOOLS_SWIFTLINT_CONFIG" ]] || die "SwiftLint config is missing: $SWIFT_TOOLS_SWIFTLINT_CONFIG"
+    fi
 fi
 
 source "$release_root/Scripts/toolchain-lock.sh"
@@ -255,14 +271,34 @@ run_tool() {
     esac
 }
 
-run_swiftformat() {
+run_configured_swiftformat() {
     local effective_config
     effective_config=$(mktemp "$repository_root/.swiftformat.effective.XXXXXX")
     trap 'rm -f "$effective_config"' RETURN
-    cat "$release_root/config/swiftformat.base" "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" > "$effective_config"
-    run_tool swiftformat "${SWIFT_TOOLS_SOURCE_PATHS[@]}" --config "$effective_config" "$@"
+    {
+        cat "$release_root/config/swiftformat.base"
+        if [[ -n "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" ]]; then
+            cat "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG"
+        fi
+    } > "$effective_config"
+    run_tool swiftformat --config "$effective_config" "$@"
     rm -f "$effective_config"
     trap - RETURN
+}
+
+run_swiftformat() {
+    run_configured_swiftformat "${SWIFT_TOOLS_SOURCE_PATHS[@]}" "$@"
+}
+
+run_configured_swiftlint() {
+    [[ "$#" -ge 1 ]] || die 'configured SwiftLint execution requires a subcommand'
+    local subcommand=$1
+    shift
+    local lint_args=("$subcommand" --config "$release_root/config/swiftlint.base.yml")
+    if [[ -n "$SWIFT_TOOLS_SWIFTLINT_CONFIG" ]]; then
+        lint_args+=(--config "$SWIFT_TOOLS_SWIFTLINT_CONFIG")
+    fi
+    run_tool swiftlint "${lint_args[@]}" "$@"
 }
 
 run_format() {
@@ -271,11 +307,24 @@ run_format() {
 
 run_lint() {
     run_swiftformat --lint
-    # SwiftLint evaluates repeated --config arguments as a parent-child hierarchy.
-    run_tool swiftlint lint \
-        --config "$release_root/config/swiftlint.base.yml" \
-        --config "$SWIFT_TOOLS_SWIFTLINT_CONFIG" \
-        "${SWIFT_TOOLS_SOURCE_PATHS[@]}"
+    run_configured_swiftlint lint "${SWIFT_TOOLS_SOURCE_PATHS[@]}"
+}
+
+run_configured() {
+    [[ "$#" -ge 1 ]] || die 'configured requires swiftformat or swiftlint'
+    local tool=$1
+    shift
+    case "$tool" in
+        swiftformat)
+            run_configured_swiftformat "$@"
+            ;;
+        swiftlint)
+            run_configured_swiftlint "$@"
+            ;;
+        *)
+            die "unsupported configured tool: $tool"
+            ;;
+    esac
 }
 
 cd "$repository_root"
@@ -288,6 +337,9 @@ case "$command" in
         ;;
     lint)
         run_lint
+        ;;
+    configured)
+        run_configured "$@"
         ;;
     exec)
         [[ "$#" -ge 1 ]] || die 'exec requires swiftformat or swiftlint'
