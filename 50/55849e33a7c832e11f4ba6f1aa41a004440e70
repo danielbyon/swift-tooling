@@ -1,0 +1,19 @@
+Tests/test_suite.sh
+  s_6f10d12e5c684d::t_74f67207194a10 584-588
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5055849e33a7c832e11f4ba6f1aa41a004440e70",
+  "prompts": {},
+  "sessions": {
+    "s_6f10d12e5c684d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c5cc-984b-7b42-b39d-a78a91277495",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
