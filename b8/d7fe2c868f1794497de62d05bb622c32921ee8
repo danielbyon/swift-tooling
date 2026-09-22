@@ -1,0 +1,25 @@
+README.md
+  s_6f10d12e5c684d::t_7221fe950b4e89 29-32,52,58-62,68-69
+Scripts/swift-tools-local.sh
+  s_6f10d12e5c684d::t_6ea839fa522c36 6-10
+Tests/test_suite.sh
+  s_6f10d12e5c684d::t_784584a4c9ac3b 373-496,622-667,830-831,836
+bin/swift-tooling
+  s_6f10d12e5c684d::t_72df4c0a835821 24,30,52-55,89-90,106,108,110-112,115-117,120-125,274,278-284,289-303,310-327,341-343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b8d7fe2c868f1794497de62d05bb622c32921ee8",
+  "prompts": {},
+  "sessions": {
+    "s_6f10d12e5c684d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c5cc-984b-7b42-b39d-a78a91277495",
+        "model": "unknown"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
