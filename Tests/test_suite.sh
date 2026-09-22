@@ -581,8 +581,11 @@ test_toolchain_lock_parser_supports_escaped_quoted_values() {
 export MINT_ARCHIVE_URL="https://example.com/mint.zip\"?channel=stable"
 LOCK
 
-    parsed=$(bash -c 'source "$1"; toolchain_lock_value "$2" MINT_ARCHIVE_URL' \
-        _ "$toolchain_lock_parser" "$lock")
+    if ! parsed=$(bash -c 'source "$1"; toolchain_lock_value "$2" MINT_ARCHIVE_URL' \
+        _ "$toolchain_lock_parser" "$lock"); then
+        fail 'parsing an escaped quoted lock value should succeed'
+        return
+    fi
     assert_equal 'https://example.com/mint.zip"?channel=stable' "$parsed"
 }
 
