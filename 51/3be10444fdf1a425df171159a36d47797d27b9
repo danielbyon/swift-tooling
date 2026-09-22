@@ -1,0 +1,39 @@
+Scripts/setup-swift-tools.sh
+  s_6f10d12e5c684d::t_b5cd05b1a69bc0 309
+bin/swift-tooling
+  s_6f10d12e5c684d::t_e101e146a54a6f 74,112-127
+README.md
+  s_6f10d12e5c684d::t_061a5db8f6973d 68
+Scripts/validate-config.sh
+  s_6f10d12e5c684d::t_1a297961d450e6 15-16
+  s_6f10d12e5c684d::t_8c599bee7df787 22,25-26
+Scripts/generate-mintfile.sh
+  s_6f10d12e5c684d::t_e469af7dda1e80 27-36
+  s_6f10d12e5c684d::t_14d6661c2369ba 19-25
+Tests/test_suite.sh
+  s_6f10d12e5c684d::t_b1f2eeff00e162 249-250,309-311,377-378
+  s_6f10d12e5c684d::t_bdf276ce5cd2ad 9,558-559,561,576-588,664
+  s_6f10d12e5c684d::t_f1fecad3c986dc 400,430,438,442-445
+  s_6f10d12e5c684d::t_b48ee54006218e 8,550-557,560,562-575,663
+  s_6f10d12e5c684d::t_6caef7e4e22879 110-116,119-139,277,280,291,295,395,399,401-402,425,429,431-432
+  s_6f10d12e5c684d::t_9355fe8a232bb9 86,117-118
+Scripts/toolchain-lock.sh
+  s_6f10d12e5c684d::t_deef4ee79170ed 1-50,52-78,80-139
+  s_6f10d12e5c684d::t_e9dba5781a41c1 51,79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "513be10444fdf1a425df171159a36d47797d27b9",
+  "prompts": {},
+  "sessions": {
+    "s_6f10d12e5c684d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c5cc-984b-7b42-b39d-a78a91277495",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
