@@ -65,5 +65,5 @@ overlay and run `swiftlint analyze` in their own adapter.
 make test
 make lint
 make validate-config
-make release VERSION=v0.1.0
+make release VERSION=v0.1.1
 ```

@@ -16,15 +16,24 @@ fi
     exit 1
 }
 
-lock_value() {
-    local key=$1
-    awk -F= -v expected_key="$key" '$1 == expected_key { print substr($0, index($0, "=") + 1); exit }' "$toolchain_lock"
-}
+# shellcheck source=/dev/null
+source "$script_directory/toolchain-lock.sh"
 
-swiftformat_package=$(lock_value SWIFTFORMAT_PACKAGE)
-swiftformat_version=$(lock_value SWIFTFORMAT_VERSION)
-swiftlint_package=$(lock_value SWIFTLINT_PACKAGE)
-swiftlint_version=$(lock_value SWIFTLINT_VERSION)
+swiftformat_package=$(toolchain_lock_value "$toolchain_lock" SWIFTFORMAT_PACKAGE)
+swiftformat_version=$(toolchain_lock_value "$toolchain_lock" SWIFTFORMAT_VERSION)
+swiftlint_package=$(toolchain_lock_value "$toolchain_lock" SWIFTLINT_PACKAGE)
+swiftlint_version=$(toolchain_lock_value "$toolchain_lock" SWIFTLINT_VERSION)
+
+package_pattern='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
+version_pattern='^[A-Za-z0-9][A-Za-z0-9._-]*$'
+[[ "$swiftformat_package" =~ $package_pattern && "$swiftlint_package" =~ $package_pattern ]] || {
+    printf '%s\n' 'toolchain lock package values must use owner/repository syntax' >&2
+    exit 1
+}
+[[ "$swiftformat_version" =~ $version_pattern && "$swiftlint_version" =~ $version_pattern ]] || {
+    printf '%s\n' 'toolchain lock version values contain unsupported characters' >&2
+    exit 1
+}
 
 [[ -n "$swiftformat_package" && -n "$swiftformat_version" ]] || {
     printf '%s\n' 'toolchain lock must define the SwiftFormat package and version' >&2

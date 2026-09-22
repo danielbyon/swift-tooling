@@ -71,6 +71,7 @@ done
 [[ -d "$repository_root" ]] || die "repository root does not exist: $repository_root"
 [[ -d "$release_root" ]] || die "release root does not exist: $release_root"
 [[ -f "$release_root/toolchain.lock" ]] || die "release is missing toolchain.lock"
+[[ -f "$release_root/Scripts/toolchain-lock.sh" ]] || die "release is missing Scripts/toolchain-lock.sh"
 
 if [[ -z "$local_config" ]]; then
     local_config="$repository_root/Scripts/swift-tools-local.sh"
@@ -108,8 +109,22 @@ if [[ "$command" = format || "$command" = lint ]]; then
     [[ -f "$SWIFT_TOOLS_SWIFTLINT_CONFIG" ]] || die "SwiftLint config is missing: $SWIFT_TOOLS_SWIFTLINT_CONFIG"
 fi
 
-# shellcheck source=/dev/null
-source "$release_root/toolchain.lock"
+source "$release_root/Scripts/toolchain-lock.sh"
+
+load_toolchain_value() {
+    local key=$1
+    local value
+    value=$(toolchain_lock_value "$release_root/toolchain.lock" "$key") || die "could not parse release toolchain.lock"
+    printf '%s' "$value"
+}
+
+MINT_VERSION=$(load_toolchain_value MINT_VERSION)
+MINT_ARCHIVE_URL=$(load_toolchain_value MINT_ARCHIVE_URL)
+MINT_ARCHIVE_SHA256=$(load_toolchain_value MINT_ARCHIVE_SHA256)
+SWIFTFORMAT_PACKAGE=$(load_toolchain_value SWIFTFORMAT_PACKAGE)
+SWIFTFORMAT_VERSION=$(load_toolchain_value SWIFTFORMAT_VERSION)
+SWIFTLINT_PACKAGE=$(load_toolchain_value SWIFTLINT_PACKAGE)
+SWIFTLINT_VERSION=$(load_toolchain_value SWIFTLINT_VERSION)
 
 : "${MINT_VERSION:?release toolchain.lock must define MINT_VERSION}"
 : "${SWIFTFORMAT_PACKAGE:?release toolchain.lock must define SWIFTFORMAT_PACKAGE}"

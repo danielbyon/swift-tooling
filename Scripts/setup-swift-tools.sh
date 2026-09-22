@@ -306,6 +306,7 @@ for required_file in \
     bin/swift-tooling \
     Scripts/setup-swift-tools.sh \
     Scripts/swift-tools.sh \
+    Scripts/toolchain-lock.sh \
     Scripts/swift-tools-local.sh \
     config/swiftformat.base \
     config/swiftlint.base.yml \
