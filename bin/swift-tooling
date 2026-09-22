@@ -1,0 +1,299 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly script_directory=$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+
+repository_root=$(pwd -P)
+release_root=$(cd -- "$script_directory/.." && pwd -P)
+local_config=''
+command=''
+
+die() {
+    printf 'swift-tooling: %s\n' "$1" >&2
+    exit 1
+}
+
+usage() {
+    cat <<'USAGE'
+Usage: swift-tooling [options] <command>
+
+Options:
+  --root PATH             Consumer repository root (default: current directory)
+  --release-root PATH     Extracted swift-tooling release root
+  --local-config PATH     Consumer-local configuration file
+
+Commands:
+  bootstrap               Install Mint and the pinned Swift tools
+  format                  Format configured Swift source paths
+  lint                    Run SwiftFormat and SwiftLint checks
+  exec TOOL [ARGS...]     Run a pinned SwiftFormat or SwiftLint command
+USAGE
+}
+
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        --root)
+            [[ "$#" -ge 2 ]] || die '--root requires a path'
+            repository_root=$(cd -- "$2" && pwd -P)
+            shift 2
+            ;;
+        --release-root)
+            [[ "$#" -ge 2 ]] || die '--release-root requires a path'
+            release_root=$(cd -- "$2" && pwd -P)
+            shift 2
+            ;;
+        --local-config)
+            [[ "$#" -ge 2 ]] || die '--local-config requires a path'
+            local_config=$2
+            shift 2
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            command=$1
+            shift
+            break
+            ;;
+    esac
+done
+
+[[ -n "$command" ]] || {
+    usage >&2
+    exit 2
+}
+
+[[ -d "$repository_root" ]] || die "repository root does not exist: $repository_root"
+[[ -d "$release_root" ]] || die "release root does not exist: $release_root"
+[[ -f "$release_root/toolchain.lock" ]] || die "release is missing toolchain.lock"
+[[ -f "$release_root/Scripts/toolchain-lock.sh" ]] || die "release is missing Scripts/toolchain-lock.sh"
+
+if [[ -z "$local_config" ]]; then
+    local_config="$repository_root/Scripts/swift-tools-local.sh"
+elif [[ "$local_config" != /* ]]; then
+    local_config="$repository_root/$local_config"
+fi
+
+SWIFT_TOOLS_SOURCE_PATHS=()
+SWIFT_TOOLS_SWIFTFORMAT_CONFIG='.swiftformat'
+SWIFT_TOOLS_SWIFTLINT_CONFIG='.swiftlint.yml'
+SWIFT_TOOLS_COMMAND_PREFIX=()
+SWIFT_TOOLS_ROOT="$repository_root"
+if [[ -f "$local_config" ]]; then
+    # shellcheck source=/dev/null
+    source "$local_config"
+elif [[ "$command" = format || "$command" = lint ]]; then
+    die "consumer configuration is missing: $local_config"
+fi
+
+if [[ "$command" = format || "$command" = lint ]]; then
+    [[ "${#SWIFT_TOOLS_SOURCE_PATHS[@]}" -gt 0 ]] || die 'SWIFT_TOOLS_SOURCE_PATHS must not be empty'
+
+    for source_path in "${SWIFT_TOOLS_SOURCE_PATHS[@]}"; do
+        [[ -e "$repository_root/$source_path" || "$source_path" = /* ]] || die "source path does not exist: $source_path"
+    done
+
+    if [[ "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" != /* ]]; then
+        SWIFT_TOOLS_SWIFTFORMAT_CONFIG="$repository_root/$SWIFT_TOOLS_SWIFTFORMAT_CONFIG"
+    fi
+    if [[ "$SWIFT_TOOLS_SWIFTLINT_CONFIG" != /* ]]; then
+        SWIFT_TOOLS_SWIFTLINT_CONFIG="$repository_root/$SWIFT_TOOLS_SWIFTLINT_CONFIG"
+    fi
+
+    [[ -f "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" ]] || die "SwiftFormat config is missing: $SWIFT_TOOLS_SWIFTFORMAT_CONFIG"
+    [[ -f "$SWIFT_TOOLS_SWIFTLINT_CONFIG" ]] || die "SwiftLint config is missing: $SWIFT_TOOLS_SWIFTLINT_CONFIG"
+fi
+
+source "$release_root/Scripts/toolchain-lock.sh"
+
+load_toolchain_value() {
+    local key=$1
+    local value
+    value=$(toolchain_lock_value "$release_root/toolchain.lock" "$key") || die "could not parse release toolchain.lock"
+    printf '%s' "$value"
+}
+
+MINT_VERSION=$(load_toolchain_value MINT_VERSION)
+MINT_ARCHIVE_URL=$(load_toolchain_value MINT_ARCHIVE_URL)
+MINT_ARCHIVE_SHA256=$(load_toolchain_value MINT_ARCHIVE_SHA256)
+SWIFTFORMAT_PACKAGE=$(load_toolchain_value SWIFTFORMAT_PACKAGE)
+SWIFTFORMAT_VERSION=$(load_toolchain_value SWIFTFORMAT_VERSION)
+SWIFTLINT_PACKAGE=$(load_toolchain_value SWIFTLINT_PACKAGE)
+SWIFTLINT_VERSION=$(load_toolchain_value SWIFTLINT_VERSION)
+
+: "${MINT_VERSION:?release toolchain.lock must define MINT_VERSION}"
+: "${SWIFTFORMAT_PACKAGE:?release toolchain.lock must define SWIFTFORMAT_PACKAGE}"
+: "${SWIFTFORMAT_VERSION:?release toolchain.lock must define SWIFTFORMAT_VERSION}"
+: "${SWIFTLINT_PACKAGE:?release toolchain.lock must define SWIFTLINT_PACKAGE}"
+: "${SWIFTLINT_VERSION:?release toolchain.lock must define SWIFTLINT_VERSION}"
+
+mint_binary=''
+
+ensure_mint() {
+    if [[ -n "${SWIFT_TOOLING_MINT_BINARY:-}" ]]; then
+        mint_binary=$SWIFT_TOOLING_MINT_BINARY
+    else
+        mint_binary="$repository_root/.tools/mint/$MINT_VERSION/mint"
+    fi
+    [[ -x "$mint_binary" ]] || die "Mint is not bootstrapped; run Scripts/swift-tools.sh bootstrap first"
+}
+
+validate_mint_archive() {
+    local archive=$1
+    local member listing entry_type
+    local member_list detail_list
+
+    command -v zipinfo >/dev/null 2>&1 || die 'zipinfo is required to inspect the Mint archive'
+    member_list=$(mktemp "${TMPDIR:-/tmp}/swift-tooling-zip-members.XXXXXX")
+    detail_list=$(mktemp "${TMPDIR:-/tmp}/swift-tooling-zip-details.XXXXXX")
+    if ! zipinfo -1 "$archive" > "$member_list" || ! zipinfo -l "$archive" > "$detail_list"; then
+        rm -f "$member_list" "$detail_list"
+        die "could not inspect Mint archive: $archive"
+    fi
+
+    while IFS= read -r member; do
+        case "$member" in
+            ''|*/) continue ;;
+            /*|../*|*/../*|*/..|..)
+                rm -f "$member_list" "$detail_list"
+                die "Mint archive contains an unsafe path: $member"
+                ;;
+        esac
+    done < "$member_list"
+
+    while IFS= read -r listing; do
+        case "$listing" in
+            Archive:*|"Zip file size:"*|[[:space:]]*|[0-9]*\ file,*|[0-9]*\ files,*) continue ;;
+        esac
+        entry_type=$(printf '%.1s' "$listing")
+        case "$entry_type" in
+            -|d) ;;
+            *)
+                rm -f "$member_list" "$detail_list"
+                die 'Mint archive contains a symlink, hard link, or special file'
+                ;;
+        esac
+    done < "$detail_list"
+
+    rm -f "$member_list" "$detail_list"
+}
+
+run_mint() {
+    ensure_mint
+    if [[ "${#SWIFT_TOOLS_COMMAND_PREFIX[@]}" -gt 0 ]]; then
+        "${SWIFT_TOOLS_COMMAND_PREFIX[@]}" "$mint_binary" "$@"
+    else
+        "$mint_binary" "$@"
+    fi
+}
+
+bootstrap_mint() {
+    if [[ -n "${SWIFT_TOOLING_MINT_BINARY:-}" ]]; then
+        mint_binary=$SWIFT_TOOLING_MINT_BINARY
+    else
+        mint_binary="$repository_root/.tools/mint/$MINT_VERSION/mint"
+        if [[ ! -x "$mint_binary" ]]; then
+            [[ -n "${MINT_ARCHIVE_URL:-}" ]] || die 'release toolchain.lock must define MINT_ARCHIVE_URL'
+            [[ -n "${MINT_ARCHIVE_SHA256:-}" ]] || die 'release toolchain.lock must define MINT_ARCHIVE_SHA256'
+            local mint_directory="$repository_root/.tools/mint/$MINT_VERSION"
+            local mint_archive="$mint_directory/mint.zip"
+            local temporary_archive="$mint_directory/mint.zip.download.$$"
+            mkdir -p "$mint_directory"
+            curl --fail --location --silent --show-error --retry 3 "$MINT_ARCHIVE_URL" --output "$temporary_archive"
+            if [[ "$(shasum -a 256 "$temporary_archive" | awk '{print $1}')" != "$MINT_ARCHIVE_SHA256" ]]; then
+                rm -f "$temporary_archive"
+                die 'Mint archive checksum mismatch'
+            fi
+            mv "$temporary_archive" "$mint_archive"
+            validate_mint_archive "$mint_archive"
+            local mint_entry=''
+            local member
+            while IFS= read -r member; do
+                case "$member" in
+                    ''|*/) continue ;;
+                esac
+                if [[ "$(basename "$member")" = mint ]]; then
+                    [[ -z "$mint_entry" ]] || die 'Mint archive contains multiple mint executables'
+                    mint_entry=$member
+                fi
+            done < <(zipinfo -1 "$mint_archive")
+            [[ -n "$mint_entry" ]] || die 'Mint executable was not found in the verified archive'
+            local extracted_mint="$mint_directory/mint.download.$$"
+            if ! unzip -p "$mint_archive" "$mint_entry" > "$extracted_mint"; then
+                rm -f "$extracted_mint"
+                die 'could not extract Mint executable from the verified archive'
+            fi
+            install -m 0755 "$extracted_mint" "$mint_binary"
+            rm -f "$extracted_mint"
+        fi
+    fi
+
+    MINT_PATH="$repository_root/.tools/mint"
+    MINT_LINK_PATH="$MINT_PATH/bin"
+    export MINT_PATH MINT_LINK_PATH
+    run_mint bootstrap --mintfile "$release_root/Mintfile"
+}
+
+run_tool() {
+    local tool=$1
+    shift
+    case "$tool" in
+        swiftformat)
+            run_mint run --mintfile "$release_root/Mintfile" "$SWIFTFORMAT_PACKAGE@$SWIFTFORMAT_VERSION" "$@"
+            ;;
+        swiftlint)
+            run_mint run --mintfile "$release_root/Mintfile" "$SWIFTLINT_PACKAGE@$SWIFTLINT_VERSION" "$@"
+            ;;
+        *)
+            die "unsupported tool: $tool"
+            ;;
+    esac
+}
+
+run_swiftformat() {
+    local effective_config
+    effective_config=$(mktemp "$repository_root/.swiftformat.effective.XXXXXX")
+    trap 'rm -f "$effective_config"' RETURN
+    cat "$release_root/config/swiftformat.base" "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" > "$effective_config"
+    run_tool swiftformat "${SWIFT_TOOLS_SOURCE_PATHS[@]}" --config "$effective_config" "$@"
+    rm -f "$effective_config"
+    trap - RETURN
+}
+
+run_format() {
+    run_swiftformat
+}
+
+run_lint() {
+    run_swiftformat --lint
+    # SwiftLint evaluates repeated --config arguments as a parent-child hierarchy.
+    run_tool swiftlint lint \
+        --config "$release_root/config/swiftlint.base.yml" \
+        --config "$SWIFT_TOOLS_SWIFTLINT_CONFIG" \
+        "${SWIFT_TOOLS_SOURCE_PATHS[@]}"
+}
+
+cd "$repository_root"
+case "$command" in
+    bootstrap)
+        bootstrap_mint
+        ;;
+    format)
+        run_format
+        ;;
+    lint)
+        run_lint
+        ;;
+    exec)
+        [[ "$#" -ge 1 ]] || die 'exec requires swiftformat or swiftlint'
+        run_tool "$@"
+        ;;
+    *)
+        die "unknown command: $command"
+        ;;
+esac
