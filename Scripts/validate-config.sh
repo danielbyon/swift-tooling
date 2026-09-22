@@ -21,6 +21,11 @@ bash "$repository_root/Scripts/generate-mintfile.sh" "$repository_root/toolchain
 bash "$repository_root/bin/swift-tooling" --root "$repository_root" --release-root "$validation_root" bootstrap
 bash "$repository_root/bin/swift-tooling" --root "$repository_root" --release-root "$validation_root" exec swiftlint rules --config "$validation_root/config/swiftlint.base.yml" >/dev/null
 
-printf '%s\n' 'allow_zero_lintable_files: true' > "$validation_root/swiftlint-empty.yml"
-bash "$repository_root/bin/swift-tooling" --root "$repository_root" --release-root "$validation_root" exec swiftlint lint --config "$validation_root/config/swiftlint.base.yml" --config "$validation_root/swiftlint-empty.yml" "$validation_root"
-bash "$repository_root/bin/swift-tooling" --root "$repository_root" --release-root "$validation_root" exec swiftformat --lint --config "$validation_root/config/swiftformat.base" stdin --stdin-path ConfigSmoke.swift < /dev/null
+# Validate the packaged configurations against an in-memory source sample so
+# this repository does not need to carry a test Swift file.
+printf '%s\n' 'struct ConfigSmoke {}' | \
+    bash "$repository_root/bin/swift-tooling" --root "$repository_root" --release-root "$validation_root" \
+        exec swiftlint lint --use-stdin --quiet --config "$validation_root/config/swiftlint.base.yml"
+printf '%s\n' 'struct ConfigSmoke {}' | \
+    bash "$repository_root/bin/swift-tooling" --root "$repository_root" --release-root "$validation_root" \
+        exec swiftformat --lint --config "$validation_root/config/swiftformat.base" stdin --stdin-path ConfigSmoke.swift
