@@ -7,6 +7,24 @@ repository_root=$(pwd -P)
 release_root=$(cd -- "$script_directory/.." && pwd -P)
 local_config=''
 command=''
+swiftformat_effective_config=''
+
+cleanup_swiftformat_config_on_exit() {
+    local exit_status=$?
+    trap - EXIT
+    if [[ -n "$swiftformat_effective_config" ]] \
+        && ! rm -f "$swiftformat_effective_config"; then
+        printf 'swift-tooling: could not remove temporary SwiftFormat config: %s\n' \
+            "$swiftformat_effective_config" >&2
+        if [[ "$exit_status" -eq 0 ]]; then
+            exit_status=1
+        fi
+    fi
+    exit "$exit_status"
+}
+
+# set -e can terminate the process before the SwiftFormat function returns.
+trap cleanup_swiftformat_config_on_exit EXIT
 
 die() {
     printf 'swift-tooling: %s\n' "$1" >&2
@@ -272,18 +290,25 @@ run_tool() {
 }
 
 run_configured_swiftformat() {
-    local effective_config
-    effective_config=$(mktemp "$repository_root/.swiftformat.effective.XXXXXX")
-    trap 'rm -f "$effective_config"' RETURN
+    local tool_status=0
+    swiftformat_effective_config=$(mktemp "$repository_root/.swiftformat.effective.XXXXXX")
     {
         cat "$release_root/config/swiftformat.base"
         if [[ -n "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" ]]; then
             cat "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG"
         fi
-    } > "$effective_config"
-    run_tool swiftformat --config "$effective_config" "$@"
-    rm -f "$effective_config"
-    trap - RETURN
+    } > "$swiftformat_effective_config"
+    run_tool swiftformat --config "$swiftformat_effective_config" "$@" || tool_status=$?
+    if rm -f "$swiftformat_effective_config"; then
+        swiftformat_effective_config=''
+    else
+        printf 'swift-tooling: could not remove temporary SwiftFormat config: %s\n' \
+            "$swiftformat_effective_config" >&2
+        if [[ "$tool_status" -eq 0 ]]; then
+            tool_status=1
+        fi
+    fi
+    return "$tool_status"
 }
 
 run_swiftformat() {

@@ -15,7 +15,7 @@ verifies the archive, installs it under `.tools/`, adds `.tools/` to
 `.gitignore`, and creates the adapter and local configuration template:
 
 ```bash
-tooling_version=v0.1.1
+tooling_version=v0.1.2
 setup_script=$(mktemp) && curl --fail --location --silent --show-error \
   "https://github.com/danielbyon/swift-tooling/releases/download/$tooling_version/setup-swift-tools.sh" \
   --output "$setup_script" && bash "$setup_script" \
@@ -74,5 +74,5 @@ their own adapter.
 make test
 make lint
 make validate-config
-make release VERSION=v0.1.1
+make release VERSION=v0.1.2
 ```
