@@ -1,0 +1,21 @@
+Tests/test_suite.sh
+  s_6f4e34970681e5::t_ce4becb4258edb 403-404
+  s_6f4e34970681e5::t_815ab2d9e4e9e5 307,388-402,405-421
+  s_6f4e34970681e5::t_74861f0a1719c6 422
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e3d3158eccf5e20ce8e48e1f3182d1168dc2f39e",
+  "prompts": {},
+  "sessions": {
+    "s_6f4e34970681e5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d575-4d61-7ba3-9dad-b597f1d9c0da",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
