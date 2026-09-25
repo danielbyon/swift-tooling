@@ -303,7 +303,7 @@ test_runner_rejects_unsafe_mint_archive() {
 }
 
 test_runner_forwards_config_and_paths_and_cleans_effective_format_config() {
-    local fixture consumer fake_mint log config_log effective_count
+    local fixture consumer fake_mint log config_log effective_count failure_status composition_status
     fixture=$(new_fixture)
     consumer="$fixture/consumer"
     mkdir -p "$consumer/.tools/mint/bin" "$fixture/release/bin" "$fixture/release/config" \
@@ -329,7 +329,7 @@ for ((index = 0; index < ${#args[@]}; index += 1)); do
         cat "${args[index + 1]}" >> "${FAKE_MINT_CONFIG_LOG:?}"
     fi
 done
-exit 0
+exit "${FAKE_MINT_EXIT_STATUS:-0}"
 FAKE_MINT
     chmod +x "$fake_mint"
     cat > "$consumer/Scripts/swift-tools-local.sh" <<'LOCAL_CONFIG'
@@ -368,6 +368,36 @@ LOCAL_CONFIG
     assert_order "$config_log" 'swiftlint base' '# local swiftlint options'
     assert_contains "$log" 'Sources'
     assert_contains "$log" 'Tests'
+
+    : > "$log"
+    : > "$config_log"
+    if FAKE_MINT_LOG="$log" FAKE_MINT_CONFIG_LOG="$config_log" \
+        FAKE_MINT_EXIT_STATUS=23 SWIFT_TOOLING_MINT_BINARY="$fake_mint" \
+        bash "$runner" --root "$consumer" --release-root "$fixture/release" lint \
+        >/dev/null 2>&1; then
+        fail 'a SwiftFormat failure should retain its exit status'
+        return
+    else
+        failure_status=$?
+    fi
+    assert_equal 23 "$failure_status"
+    effective_count=$(find "$consumer" -maxdepth 1 -name '.swiftformat.effective.*' -type f | wc -l | tr -d ' ')
+    assert_equal 0 "$effective_count"
+
+    mv "$fixture/release/config/swiftformat.base" \
+        "$fixture/release/config/swiftformat.base.saved"
+    if FAKE_MINT_LOG="$log" FAKE_MINT_CONFIG_LOG="$config_log" \
+        SWIFT_TOOLING_MINT_BINARY="$fake_mint" \
+        bash "$runner" --root "$consumer" --release-root "$fixture/release" format \
+        >/dev/null 2>&1; then
+        fail 'config composition failure should be reported'
+        return
+    else
+        composition_status=$?
+    fi
+    assert_equal 1 "$composition_status"
+    effective_count=$(find "$consumer" -maxdepth 1 -name '.swiftformat.effective.*' -type f | wc -l | tr -d ' ')
+    assert_equal 0 "$effective_count"
 }
 
 test_runner_configured_exec_composes_shared_and_local_configs() {
@@ -760,7 +790,7 @@ LOCK
 }
 
 test_built_release_installs_and_runs_through_consumer_adapter() {
-    local fixture output consumer archive archive_sha fake_mint log effective_count
+    local fixture output consumer archive archive_sha fake_mint log effective_count failure_status
     fixture=$(new_fixture)
     output="$fixture/dist"
     consumer="$fixture/consumer"
@@ -795,6 +825,7 @@ LOCAL_CONFIG
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${FAKE_MINT_LOG:?}"
+exit "${FAKE_MINT_EXIT_STATUS:-0}"
 FAKE_MINT
     chmod 0755 "$fake_mint"
 
@@ -806,6 +837,18 @@ FAKE_MINT
 
     assert_contains "$log" 'nicklockwood/SwiftFormat@0.63.0'
     assert_contains "$log" 'realm/SwiftLint@0.65.1'
+    effective_count=$(find "$consumer" -maxdepth 1 -name '.swiftformat.effective.*' -type f | wc -l | tr -d ' ')
+    assert_equal 0 "$effective_count"
+
+    if FAKE_MINT_LOG="$log" FAKE_MINT_EXIT_STATUS=23 \
+        SWIFT_TOOLING_MINT_BINARY="$fake_mint" \
+        bash "$consumer/Scripts/swift-tools.sh" lint >/dev/null 2>&1; then
+        fail 'the installed release should preserve SwiftFormat failure status'
+        return
+    else
+        failure_status=$?
+    fi
+    assert_equal 23 "$failure_status"
     effective_count=$(find "$consumer" -maxdepth 1 -name '.swiftformat.effective.*' -type f | wc -l | tr -d ' ')
     assert_equal 0 "$effective_count"
 
