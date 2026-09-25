@@ -304,6 +304,7 @@ test_runner_rejects_unsafe_mint_archive() {
 
 test_runner_forwards_config_and_paths_and_cleans_effective_format_config() {
     local fixture consumer fake_mint log config_log effective_count failure_status composition_status
+    local cleanup_status fake_bin fake_rm real_rm effective_config
     fixture=$(new_fixture)
     consumer="$fixture/consumer"
     mkdir -p "$consumer/.tools/mint/bin" "$fixture/release/bin" "$fixture/release/config" \
@@ -383,6 +384,41 @@ LOCAL_CONFIG
     assert_equal 23 "$failure_status"
     effective_count=$(find "$consumer" -maxdepth 1 -name '.swiftformat.effective.*' -type f | wc -l | tr -d ' ')
     assert_equal 0 "$effective_count"
+
+    fake_bin="$fixture/fake-bin"
+    mkdir -p "$fake_bin"
+    fake_rm="$fake_bin/rm"
+    real_rm=$(command -v rm)
+    cat > "$fake_rm" <<'FAKE_RM'
+#!/usr/bin/env bash
+set -euo pipefail
+for argument in "$@"; do
+    case "$argument" in
+        */.swiftformat.effective.*) exit 1 ;;
+    esac
+done
+exec "${FAKE_RM_REAL:?}" "$@"
+FAKE_RM
+    chmod +x "$fake_rm"
+    if FAKE_MINT_LOG="$log" FAKE_MINT_CONFIG_LOG="$config_log" \
+        FAKE_RM_REAL="$real_rm" \
+        PATH="$fake_bin:$PATH" SWIFT_TOOLING_MINT_BINARY="$fake_mint" \
+        bash "$runner" --root "$consumer" --release-root "$fixture/release" format \
+        >/dev/null 2>&1; then
+        fail 'a SwiftFormat cleanup failure should fail the command'
+        return
+    else
+        cleanup_status=$?
+    fi
+    if [[ "$cleanup_status" -eq 0 ]]; then
+        fail 'a SwiftFormat cleanup failure should return a nonzero status'
+    fi
+    effective_config=$(find "$consumer" -maxdepth 1 -name '.swiftformat.effective.*' -type f -print -quit)
+    if [[ -z "$effective_config" ]]; then
+        fail 'the fake rm should leave the effective config for the cleanup-failure case'
+    else
+        "$real_rm" -f "$effective_config"
+    fi
 
     mv "$fixture/release/config/swiftformat.base" \
         "$fixture/release/config/swiftformat.base.saved"
